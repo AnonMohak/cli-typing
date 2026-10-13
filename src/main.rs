@@ -46,6 +46,12 @@ fn main() -> io::Result<()> {
 
 fn run(mut app: App) -> io::Result<()> {
     let mut terminal = ratatui::init();
+    // ratatui's panic hook restores the terminal. Also give back the cursor shape.
+    let restore_terminal = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), SetCursorStyle::DefaultUserShape);
+        restore_terminal(info);
+    }));
     execute!(io::stdout(), SetCursorStyle::SteadyBar)?;
     let result = (|| -> io::Result<()> {
         while !app.quit {

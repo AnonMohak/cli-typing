@@ -2,8 +2,15 @@
 name = "typer"
 version = "0.1.0"
 edition = "2024"
+description = "A monkeytype-style typing test for the terminal"
+license = "MIT"
+repository = "https://github.com/AnonMohak/cli-typing"
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 rand = "0.10.3"
 ratatui = "0.30.2"
+
+[profile.release]
+lto = true
+strip = true

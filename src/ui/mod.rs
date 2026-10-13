@@ -92,6 +92,23 @@ mod tests {
     }
 
     #[test]
+    fn any_size_and_long_extra_letters_render_without_panic() {
+        let words = ["a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg"];
+        let mut a = app(&words);
+        for c in "a bb ccc dddd".chars().chain("e".repeat(30).chars()) {
+            let key = if c == ' ' {
+                crate::engine::Key::Space
+            } else {
+                crate::engine::Key::Char(c)
+            };
+            a.session.handle(key, Instant::now());
+        }
+        for (w, h) in [(30, 10), (31, 10), (40, 12), (120, 40), (1, 1), (0, 0)] {
+            render(&a, w, h);
+        }
+    }
+
+    #[test]
     fn small_terminal_shows_a_message() {
         let out = render(&app(&["hello"]), 20, 5);
         assert!(out.contains("too small"), "{out}");
