@@ -1,18 +1,32 @@
-#[allow(dead_code, unused_imports)] // The UI uses the engine from M2.
+mod app;
 mod engine;
+mod ui;
 
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use ratatui::crossterm::{
+    cursor::SetCursorStyle,
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    terminal,
+    execute, terminal,
 };
+
+use app::App;
+use engine::Mode;
 
 /// A monkeytype-style typing test for the terminal.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
+    /// Time mode: test length in seconds (default: 30).
+    #[arg(short, long, value_name = "SECONDS", conflicts_with = "words")]
+    time: Option<u64>,
+
+    /// Words mode: number of words.
+    #[arg(short, long, value_name = "COUNT")]
+    words: Option<usize>,
+
     /// Print each key event, to check how the terminal sends keys.
     #[arg(long)]
     keys: bool,
@@ -23,8 +37,32 @@ fn main() -> io::Result<()> {
     if cli.keys {
         return key_test();
     }
-    println!("typer: the typing test is not ready yet. Use --keys to test key input.");
-    Ok(())
+    let mode = match (cli.time, cli.words) {
+        (_, Some(n)) => Mode::Words(n.max(1)),
+        (t, None) => Mode::Time(Duration::from_secs(t.unwrap_or(30).max(1))),
+    };
+    run(App::new(mode))
+}
+
+fn run(mut app: App) -> io::Result<()> {
+    let mut terminal = ratatui::init();
+    execute!(io::stdout(), SetCursorStyle::SteadyBar)?;
+    let result = (|| -> io::Result<()> {
+        while !app.quit {
+            terminal.draw(|f| ui::draw(f, &app, Instant::now()))?;
+            // About 60 frames per second keeps the timer smooth.
+            if event::poll(Duration::from_millis(16))?
+                && let Event::Key(key) = event::read()?
+            {
+                app.on_key(key, Instant::now());
+            }
+            app.tick(Instant::now());
+        }
+        Ok(())
+    })();
+    execute!(io::stdout(), SetCursorStyle::DefaultUserShape)?;
+    ratatui::restore();
+    result
 }
 
 /// Print every key event in raw mode. Ctrl+C quits.

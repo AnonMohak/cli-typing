@@ -1,0 +1,124 @@
+mod menu;
+mod results;
+pub mod theme;
+mod typing;
+
+use std::time::Instant;
+
+use ratatui::{
+    Frame,
+    layout::{Alignment, Rect},
+    style::Style,
+    text::Line,
+    widgets::{Block, Paragraph},
+};
+
+use crate::app::{App, Screen};
+
+/// Width of the text column. Wider text is hard to read.
+const MAX_WIDTH: u16 = 80;
+const MIN_WIDTH: u16 = 30;
+const MIN_HEIGHT: u16 = 10;
+
+pub fn draw(frame: &mut Frame, app: &App, now: Instant) {
+    let area = frame.area();
+    frame.render_widget(Block::new().style(Style::new().bg(theme::BG)), area);
+
+    if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
+        let msg = Paragraph::new(vec![
+            Line::from("terminal too small"),
+            Line::from(format!("need {MIN_WIDTH} x {MIN_HEIGHT}")),
+        ])
+        .style(Style::new().fg(theme::SUB))
+        .alignment(Alignment::Center);
+        frame.render_widget(msg, center(area, area.width, 2));
+        return;
+    }
+
+    match &app.screen {
+        Screen::Typing => typing::draw(frame, app, now),
+        Screen::Results(result) => results::draw(frame, app, result),
+        Screen::Menu { selected } => menu::draw(frame, *selected),
+    }
+}
+
+/// A `width` x `height` box in the middle of `area`.
+fn center(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    }
+}
+
+/// The text column: up to `MAX_WIDTH` wide, with a gap on both sides.
+fn column(area: Rect, height: u16) -> Rect {
+    center(area, (area.width - 4).min(MAX_WIDTH), height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Mode, Session};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    fn render(app: &App, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|f| draw(f, app, Instant::now())).unwrap();
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn app(words: &[&str]) -> App {
+        let mode = Mode::Words(words.len());
+        App::with_session(mode, Session::from_words(mode, words))
+    }
+
+    #[test]
+    fn typing_screen_shows_the_words() {
+        let out = render(&app(&["hello", "world"]), 60, 20);
+        assert!(out.contains("hello world"), "{out}");
+        assert!(out.contains("words 2"), "{out}");
+    }
+
+    #[test]
+    fn small_terminal_shows_a_message() {
+        let out = render(&app(&["hello"]), 20, 5);
+        assert!(out.contains("too small"), "{out}");
+    }
+
+    #[test]
+    fn results_screen_shows_the_stats() {
+        let mut a = app(&["hi"]);
+        a.session
+            .handle(crate::engine::Key::Char('h'), Instant::now());
+        a.session
+            .handle(crate::engine::Key::Char('i'), Instant::now());
+        a.tick(Instant::now());
+        let out = render(&a, 60, 20);
+        for label in ["wpm", "acc", "raw", "consistency", "characters"] {
+            assert!(out.contains(label), "missing {label}:\n{out}");
+        }
+    }
+
+    #[test]
+    fn menu_lists_the_modes() {
+        let mut a = app(&["hi"]);
+        a.screen = Screen::Menu { selected: 0 };
+        let out = render(&a, 60, 20);
+        assert!(
+            out.contains("time 15") && out.contains("words 100"),
+            "{out}"
+        );
+    }
+}
