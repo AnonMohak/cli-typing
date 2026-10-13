@@ -1,3 +1,6 @@
+#[allow(dead_code, unused_imports)] // The UI uses the engine from M2.
+mod engine;
+
 use std::io::{self, Write};
 
 use clap::Parser;
